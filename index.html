@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Armour Penetration – X-Ray</title>
+<title>Pzgr.39 X-Ray Penetration</title>
 <style>
   body { margin:0; overflow:hidden; background:black; }
   #ui {
@@ -18,7 +18,7 @@
 <body>
 
 <div id="ui">
-X-RAY PENETRATION VIEW<br>
+Pzgr.39 – X-RAY TEST<br>
 <button onclick="fire()">FIRE</button>
 </div>
 
@@ -42,97 +42,62 @@ const key = new THREE.DirectionalLight(0xffffff, 2.2);
 key.position.set(5,4,3);
 scene.add(key);
 
-/* ---------- ARMOUR TEXTURE ---------- */
-const tex = document.createElement("canvas");
-tex.width = tex.height = 256;
-const ctx = tex.getContext("2d");
-ctx.fillStyle = "#3a4d88";
-ctx.fillRect(0,0,256,256);
-for(let i=0;i<6000;i++){
-  const x=Math.random()*256,y=Math.random()*256;
-  const v=40+Math.random()*50;
-  ctx.fillStyle=`rgb(${v},${v},${v})`;
-  ctx.fillRect(x,y,1,1);
-}
-const armourTex = new THREE.CanvasTexture(tex);
-
-/* ---------- ARMOUR (X-RAY) ---------- */
-const armourGeo = new THREE.BoxGeometry(0.5, 1.8, 2.8, 10, 18, 10);
+/* ---------- ARMOUR ---------- */
+const armourGeo = new THREE.BoxGeometry(0.5, 1.8, 2.8, 12, 20, 12);
 const armourMat = new THREE.MeshStandardMaterial({
-  map: armourTex,
+  color: 0x3a4d88,
   metalness: 0.9,
-  roughness: 0.3,
+  roughness: 0.35,
   transparent: true,
   opacity: 0.55
 });
 const armour = new THREE.Mesh(armourGeo, armourMat);
 scene.add(armour);
 
-/* ---------- SHELL GROUP ---------- */
-const shellGroup = new THREE.Group();
+/* ---------- Pzgr.39 SHELL ---------- */
+const shell = new THREE.Group();
 
-// body
-const bodyGeo = new THREE.CylinderGeometry(0.05,0.05,0.5,20);
-const bodyMat = new THREE.MeshStandardMaterial({ color:0x888888 });
+// Penetration cap (blunt)
+const capGeo = new THREE.SphereGeometry(0.055, 16, 12);
+const capMat = new THREE.MeshStandardMaterial({ color:0x666666 });
+const cap = new THREE.Mesh(capGeo, capMat);
+cap.scale.z = 0.6;
+cap.position.x = 0.32;
+shell.add(cap);
+
+// Shell body (long steel rod)
+const bodyGeo = new THREE.CylinderGeometry(0.05,0.05,0.65,20);
+const bodyMat = new THREE.MeshStandardMaterial({ color:0x777777 });
 const body = new THREE.Mesh(bodyGeo, bodyMat);
 body.rotation.z = Math.PI/2;
-shellGroup.add(body);
+shell.add(body);
 
-// tip
-const tipGeo = new THREE.ConeGeometry(0.05,0.14,20);
-const tipMat = new THREE.MeshStandardMaterial({
-  color:0xffaa00,
-  emissive:0xff6600
-});
-const tip = new THREE.Mesh(tipGeo, tipMat);
-tip.rotation.z = Math.PI/2;
-tip.position.x = 0.32;
-shellGroup.add(tip);
+// Base (tracer / base plug)
+const baseGeo = new THREE.CylinderGeometry(0.045,0.045,0.12,12);
+const baseMat = new THREE.MeshStandardMaterial({ color:0x555555 });
+const base = new THREE.Mesh(baseGeo, baseMat);
+base.rotation.z = Math.PI/2;
+base.position.x = -0.38;
+shell.add(base);
 
-scene.add(shellGroup);
+scene.add(shell);
 
 /* ---------- STATE ---------- */
 let velocity = new THREE.Vector3();
 let flying = false;
-let penetrated = false;
+let crushed = false;
 
 /* ---------- FIRE ---------- */
 function fire(){
-  shellGroup.position.set(-3,0,0);
-  shellGroup.scale.set(1,1,1);
-  velocity.set(0.08,0,0);
+  shell.position.set(-3,0,0);
+  shell.scale.set(1,1,1);
+  shell.rotation.set(0,0,0);
+  velocity.set(0.06,0,0); // full slow-mo
   flying = true;
-  penetrated = false;
+  crushed = false;
 }
 
-/* ---------- BIG SPARKS ---------- */
-function sparks(pos){
-  const geo = new THREE.BufferGeometry();
-  const verts=[];
-  for(let i=0;i<220;i++){
-    verts.push(pos.x,pos.y,pos.z);
-  }
-  geo.setAttribute("position", new THREE.Float32BufferAttribute(verts,3));
-  const mat = new THREE.PointsMaterial({
-    color:0xffdd66,
-    size:0.09
-  });
-  const pts = new THREE.Points(geo, mat);
-  scene.add(pts);
-
-  let s=0;
-  function anim(){
-    s+=0.12;
-    pts.scale.set(s,s,s);
-    mat.opacity -= 0.05;
-    mat.transparent=true;
-    if(mat.opacity>0) requestAnimationFrame(anim);
-    else scene.remove(pts);
-  }
-  anim();
-}
-
-/* ---------- DEFORM ARMOUR ---------- */
+/* ---------- ARMOUR DEFORMATION ---------- */
 function deformArmour(point){
   const pos = armour.geometry.attributes.position;
   for(let i=0;i<pos.count;i++){
@@ -140,18 +105,31 @@ function deformArmour(point){
     const dy = pos.getY(i)-point.y;
     const dz = pos.getZ(i)-point.z;
     const d = Math.sqrt(dx*dx+dy*dy+dz*dz);
-    if(d < 0.45){
-      pos.setX(i, pos.getX(i)-0.28*(1-d/0.45));
+    if(d < 0.5){
+      pos.setX(i, pos.getX(i)-0.35*(1-d/0.5));
     }
   }
   pos.needsUpdate = true;
 }
 
-/* ---------- DEFORM SHELL ---------- */
-function deformShell(){
-  tip.scale.set(1.8,0.4,1.8);   // flattened nose
-  body.scale.set(1.2,1.1,1.2); // bulged body
-  body.material.color.set(0x555555);
+/* ---------- SHELL DEFORMATION (BRUTAL) ---------- */
+function crushShell(){
+  // Cap pancakes
+  cap.scale.set(1.8,1.8,0.25);
+  cap.position.x -= 0.05;
+
+  // Body buckles
+  body.scale.set(1.4,0.85,1.4);
+  body.position.x -= 0.08;
+
+  // Base shortens
+  base.scale.set(1,1,0.6);
+  base.position.x += 0.04;
+
+  // Entire shell shortens
+  shell.scale.x = 0.75;
+
+  crushed = true;
 }
 
 /* ---------- LOOP ---------- */
@@ -159,19 +137,17 @@ function animate(){
   requestAnimationFrame(animate);
 
   if(flying){
-    shellGroup.position.add(velocity);
-    shellGroup.rotation.x += 0.12;
+    shell.position.add(velocity);
+    shell.rotation.x += 0.08;
 
-    // impact entry
-    if(shellGroup.position.x >= -0.25 && !penetrated){
-      penetrated = true;
-      deformArmour(shellGroup.position);
-      deformShell();
-      sparks(shellGroup.position);
+    // impact
+    if(shell.position.x >= -0.25 && !crushed){
+      deformArmour(shell.position);
+      crushShell();
     }
 
-    // stop deep inside armour
-    if(shellGroup.position.x >= 0.35){
+    // stop inside armour
+    if(shell.position.x >= 0.35){
       flying = false;
     }
   }
