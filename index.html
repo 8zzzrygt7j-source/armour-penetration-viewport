@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pzgr.39 X-Ray – Random Deformation</title>
+<title>Pzgr.39 – Plastic Deformation Test</title>
 <style>
   body { margin:0; overflow:hidden; background:black; }
   #ui {
@@ -18,14 +18,14 @@
 <body>
 
 <div id="ui">
-Pzgr.39 – RANDOMIZED X-RAY<br>
+Pzgr.39 – X-RAY PLASTIC FLOW<br>
 <button onclick="fire()">FIRE</button>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 
 <script>
-/* ---------- SCENE ---------- */
+/* ================= SCENE ================= */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
 
@@ -36,14 +36,18 @@ const renderer = new THREE.WebGLRenderer({ antialias:true });
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
-/* ---------- LIGHT ---------- */
+/* ================= LIGHT ================= */
 scene.add(new THREE.AmbientLight(0x666666));
-const key = new THREE.DirectionalLight(0xffffff, 2.2);
+const key = new THREE.DirectionalLight(0xffffff, 2.3);
 key.position.set(5,4,3);
 scene.add(key);
 
-/* ---------- ARMOUR ---------- */
-const armourGeo = new THREE.BoxGeometry(0.5, 1.8, 2.8, 12, 20, 12);
+/* ================= ARMOUR ================= */
+const armourGeo = new THREE.BoxGeometry(
+  0.55, 1.8, 2.8,
+  18, 28, 18   // high density = smooth deformation
+);
+
 const armourMat = new THREE.MeshStandardMaterial({
   color: 0x3a4d88,
   metalness: 0.9,
@@ -51,16 +55,17 @@ const armourMat = new THREE.MeshStandardMaterial({
   transparent: true,
   opacity: 0.55
 });
+
 const armour = new THREE.Mesh(armourGeo, armourMat);
 scene.add(armour);
 
-/* ---------- SHELL (SINGLE MESH) ---------- */
+/* ================= SHELL (SHARP) ================= */
 const shellGeo = new THREE.CylinderGeometry(
-  0.055,  // radius
   0.055,
-  0.9,    // length
-  28,     // radial segments
-  24      // length segments (important!)
+  0.03,     // sharp nose
+  0.9,
+  28,
+  28
 );
 shellGeo.rotateZ(Math.PI / 2);
 
@@ -73,37 +78,41 @@ const shellMat = new THREE.MeshStandardMaterial({
 const shell = new THREE.Mesh(shellGeo, shellMat);
 scene.add(shell);
 
-/* ---------- STATE ---------- */
+/* ================= STATE ================= */
 let velocity = new THREE.Vector3();
 let flying = false;
 let penetrated = false;
+let bendAxis = new THREE.Vector2();
 
-/* ---------- FIRE ---------- */
+/* ================= FIRE ================= */
 function fire(){
   shell.position.set(-3,0,0);
   shell.rotation.set(0,0,0);
   shell.scale.set(1,1,1);
-  velocity.set(0.06, 0, 0);
+  velocity.set(0.06,0,0);
   flying = true;
   penetrated = false;
 }
 
-/* ---------- ARMOUR DEFORMATION ---------- */
+/* ================= ARMOUR DEFORMATION ================= */
 function deformArmour(point){
   const pos = armour.geometry.attributes.position;
+
   for(let i=0;i<pos.count;i++){
     const dx = pos.getX(i)-point.x;
     const dy = pos.getY(i)-point.y;
     const dz = pos.getZ(i)-point.z;
     const d = Math.sqrt(dx*dx+dy*dy+dz*dz);
-    if(d < 0.5){
-      pos.setX(i, pos.getX(i)-0.35*(1-d/0.5));
+
+    if(d < 0.6){
+      const depth = (1-d/0.6);
+      pos.setX(i, pos.getX(i)-0.45*depth);
     }
   }
   pos.needsUpdate = true;
 }
 
-/* ---------- RANDOM TIP DEFORMATION ---------- */
+/* ================= SHELL TIP MUSHROOM ================= */
 function deformShellTip(){
   const pos = shell.geometry.attributes.position;
 
@@ -112,46 +121,57 @@ function deformShellTip(){
     const y = pos.getY(i);
     const z = pos.getZ(i);
 
-    // Only affect the nose (front ~25%)
     if(x > 0.25){
-      const crush = (Math.random()*0.25 + 0.15);
-      const asym = (Math.random()-0.5)*0.1;
+      const crush = 0.25 + Math.random()*0.25;
+      const spread = 1 + Math.random()*1.2;
 
       pos.setX(i, x - crush);
-      pos.setY(i, y + asym);
-      pos.setZ(i, z + asym);
+      pos.setY(i, y * spread);
+      pos.setZ(i, z * spread);
     }
   }
-
   pos.needsUpdate = true;
 }
 
-/* ---------- RANDOM DEFLECTION ---------- */
-function deflectShell(){
-  velocity.y += (Math.random() - 0.5) * 0.02;
-  velocity.z += (Math.random() - 0.5) * 0.02;
+/* ================= SHELL CURVATURE ================= */
+function bendShell(){
+  const pos = shell.geometry.attributes.position;
+
+  bendAxis.set(
+    (Math.random()-0.5)*0.06,
+    (Math.random()-0.5)*0.06
+  );
+
+  for(let i=0;i<pos.count;i++){
+    const x = pos.getX(i);
+    const factor = (x + 0.45); // rear bends more
+
+    pos.setY(i, pos.getY(i) - bendAxis.x * factor);
+    pos.setZ(i, pos.getZ(i) - bendAxis.y * factor);
+  }
+  pos.needsUpdate = true;
+
+  velocity.y += bendAxis.x * 0.5;
+  velocity.z += bendAxis.y * 0.5;
 }
 
-/* ---------- LOOP ---------- */
+/* ================= LOOP ================= */
 function animate(){
   requestAnimationFrame(animate);
 
   if(flying){
     shell.position.add(velocity);
 
-    // slight spin instability
-    shell.rotation.x += velocity.y * 4;
-    shell.rotation.z += velocity.z * 4;
+    shell.rotation.x += velocity.y * 3;
+    shell.rotation.z += velocity.z * 3;
 
-    // impact
     if(shell.position.x >= -0.25 && !penetrated){
       penetrated = true;
       deformArmour(shell.position);
       deformShellTip();
-      deflectShell();
+      bendShell();
     }
 
-    // stop inside armour
     if(shell.position.x >= 0.4){
       flying = false;
     }
