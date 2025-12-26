@@ -3,224 +3,154 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Final X-Ray Armour Penetration</title>
+<title>War Thunder-Style X-Ray Penetration</title>
 <style>
-  body { margin:0; overflow:hidden; background:black; }
-  #ui {
-    position:absolute;
-    top:10px; left:10px;
-    font-family: monospace;
-    color:white;
-    z-index:10;
-  }
+  body{margin:0;overflow:hidden;background:black;}
+  #ui{position:absolute;top:10px;left:10px;font-family:monospace;color:white;z-index:10;}
 </style>
 </head>
 <body>
-
-<div id="ui">
-FINAL FORM – X-RAY PENETRATION<br>
-<button onclick="fire()">FIRE</button>
-</div>
+<div id="ui">WAR THUNDER – X-RAY TEST<br><button onclick="fire()">FIRE</button></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 
 <script>
-/* ================= SCENE ================= */
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x000000);
-
-const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 100);
-camera.position.set(0, 0.25, 4);
-
-const renderer = new THREE.WebGLRenderer({ antialias:true });
-renderer.setSize(innerWidth, innerHeight);
+// ---------- Scene ----------
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x000000);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,100);
+camera.position.set(1.6,0.35,3.6);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
 document.body.appendChild(renderer.domElement);
 
-/* ================= LIGHT ================= */
-scene.add(new THREE.AmbientLight(0x666666));
-const key = new THREE.DirectionalLight(0xffffff, 2.5);
-key.position.set(5,4,3);
-scene.add(key);
+// ---------- Lighting ----------
+const amb=new THREE.AmbientLight(0x222222);
+scene.add(amb);
+const rim=new THREE.DirectionalLight(0xccccff,2.4);
+rim.position.set(-2,1,3);
+scene.add(rim);
+const fill=new THREE.DirectionalLight(0xffffff,0.6);
+fill.position.set(2,0.5,-2);
+scene.add(fill);
 
-/* ================= ARMOUR ================= */
-const armourGeo = new THREE.BoxGeometry(
-  0.6, 1.8, 2.8,
-  26, 36, 26   // very high density
-);
-
-const armourMat = new THREE.MeshStandardMaterial({
-  color: 0x3a4d88,
-  metalness: 0.9,
-  roughness: 0.35,
-  transparent: true,
-  opacity: 0.55
+// ---------- Armour ----------
+const armourGeo=new THREE.BoxGeometry(0.65,1.6,2.6,32,36,32);
+const armourMat=new THREE.MeshStandardMaterial({
+  color:0x4a5d9e,metalness:0.95,roughness:0.3,transparent:true,opacity:0.55
 });
-
-const armour = new THREE.Mesh(armourGeo, armourMat);
+const armour=new THREE.Mesh(armourGeo,armourMat);
 scene.add(armour);
 
-/* ================= SHELL BUILDER (ARTILLERY PROFILE) ================= */
+// ---------- Shell builder ----------
 let shell;
-
 function buildShell(){
-  // Lathe profile: sharp ogive -> cylindrical body -> base
-  const profile = [];
-  profile.push(new THREE.Vector2(0.00, 0.00));   // nose
-  profile.push(new THREE.Vector2(0.02, 0.04));
-  profile.push(new THREE.Vector2(0.035,0.10));
-  profile.push(new THREE.Vector2(0.045,0.20));
-  profile.push(new THREE.Vector2(0.055,0.35));   // full calibre
-  profile.push(new THREE.Vector2(0.055,0.75));   // body
-  profile.push(new THREE.Vector2(0.050,0.85));   // base taper
-  profile.push(new THREE.Vector2(0.045,0.90));   // base
-
-  const geo = new THREE.LatheGeometry(profile, 48);
-  geo.rotateZ(Math.PI / 2);
-  geo.translate(-0.45, 0, 0);
-
-  geo.computeVertexNormals();
-
-  const mat = new THREE.MeshStandardMaterial({
-    color:0x777777,
-    metalness:0.8,
-    roughness:0.4
+  // 88 mm APHE-like lathe profile
+  const p=[];
+  p.push(new THREE.Vector2(0.00,0.00));
+  p.push(new THREE.Vector2(0.02,0.05));
+  p.push(new THREE.Vector2(0.035,0.12));
+  p.push(new THREE.Vector2(0.045,0.22));
+  p.push(new THREE.Vector2(0.055,0.38));
+  p.push(new THREE.Vector2(0.055,0.72));
+  p.push(new THREE.Vector2(0.05,0.80));
+  p.push(new THREE.Vector2(0.045,0.88));
+  const g=new THREE.LatheGeometry(p,64);
+  g.rotateZ(Math.PI/2);
+  g.translate(-0.45,0,0);
+  g.computeVertexNormals();
+  const m=new THREE.MeshStandardMaterial({
+    color:0x888888,metalness:1.0,roughness:0.25
   });
-
-  return new THREE.Mesh(geo, mat);
+  return new THREE.Mesh(g,m);
 }
 
-/* ================= STATE ================= */
-let velocity = new THREE.Vector3();
-let flying = false;
-let penetrated = false;
-let bend = new THREE.Vector2();
+// ---------- State ----------
+let v=new THREE.Vector3();
+let flying=false,hit=false,bend=new THREE.Vector2();
 
-/* ================= FIRE ================= */
+// ---------- Fire ----------
 function fire(){
-  if(shell) scene.remove(shell);
-
-  shell = buildShell();
-  scene.add(shell);
-
+  if(shell)scene.remove(shell);
+  shell=buildShell();scene.add(shell);
   shell.position.set(-3,0,0);
   shell.rotation.set(0,0,0);
-
-  velocity.set(0.06,0,0);
-  flying = true;
-  penetrated = false;
+  v.set(0.065,0,0);
+  flying=true;hit=false;
 }
 
-/* ================= ARMOUR TUNNEL ================= */
-function deformArmourTunnel(point){
-  const pos = armour.geometry.attributes.position;
-
+// ---------- Armour deformation ----------
+function deformArmour(pt){
+  const pos=armour.geometry.attributes.position;
   for(let i=0;i<pos.count;i++){
-    const x = pos.getX(i);
-    const y = pos.getY(i);
-    const z = pos.getZ(i);
-
-    const dx = x - point.x;
-    const r = Math.sqrt(y*y + z*z);
-
-    if(Math.abs(dx) < 0.4 && r < 0.5){
-      const fall = 1 - r / 0.5;
-
-      // entry lip
-      if(dx < 0){
-        pos.setX(i, x - fall * 0.5);
-      }
-      // interior bore
-      else{
-        pos.setX(i, x - fall * 0.25);
-      }
+    const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i);
+    const dx=x-pt.x;const r=Math.sqrt(y*y+z*z);
+    if(Math.abs(dx)<0.45&&r<0.55){
+      const f=1-r/0.55;
+      if(dx<0)pos.setX(i,x-0.5*f);
+      else pos.setX(i,x-0.2*f);
     }
   }
-  pos.needsUpdate = true;
+  pos.needsUpdate=true;
 }
 
-/* ================= SHELL DEFORMATION (SMOOTH) ================= */
-function deformShellSmooth(){
-  const pos = shell.geometry.attributes.position;
-
-  // radial mushroom
+// ---------- Shell deformation ----------
+function deformShell(){
+  const pos=shell.geometry.attributes.position;
   for(let i=0;i<pos.count;i++){
-    const x = pos.getX(i);
-    const y = pos.getY(i);
-    const z = pos.getZ(i);
-
-    if(x > 0.18){
-      const r = Math.sqrt(y*y + z*z);
-      const fall = Math.max(0, 1 - r / 0.12);
-
-      const crush = (0.18 + Math.random()*0.12) * fall;
-      const spread = 1 + fall * (0.7 + Math.random()*0.6);
-
-      pos.setX(i, x - crush);
-      pos.setY(i, y * spread);
-      pos.setZ(i, z * spread);
+    const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i);
+    if(x>0.18){
+      const r=Math.sqrt(y*y+z*z);
+      const f=Math.max(0,1-r/0.12);
+      const crush=0.22*f;
+      const spread=1+f*0.9;
+      pos.setX(i,x-crush);
+      pos.setY(i,y*spread);
+      pos.setZ(i,z*spread);
     }
   }
-
-  // light smoothing pass (kills spikes)
+  // smoothing pass
   for(let i=1;i<pos.count-1;i++){
-    pos.setY(i, (pos.getY(i)+pos.getY(i-1))*0.5);
-    pos.setZ(i, (pos.getZ(i)+pos.getZ(i-1))*0.5);
+    pos.setY(i,(pos.getY(i)+pos.getY(i-1))*0.5);
+    pos.setZ(i,(pos.getZ(i)+pos.getZ(i-1))*0.5);
   }
-
-  pos.needsUpdate = true;
+  pos.needsUpdate=true;
 }
 
-/* ================= SHELL CURVATURE ================= */
+// ---------- Curvature ----------
 function bendShell(){
-  bend.set(
-    (Math.random()-0.5)*0.05,
-    (Math.random()-0.5)*0.05
-  );
-
-  const pos = shell.geometry.attributes.position;
-
+  bend.set((Math.random()-0.5)*0.05,(Math.random()-0.5)*0.05);
+  const pos=shell.geometry.attributes.position;
   for(let i=0;i<pos.count;i++){
-    const x = pos.getX(i);
-    const f = (x + 0.45);
-
-    pos.setY(i, pos.getY(i) - bend.x * f);
-    pos.setZ(i, pos.getZ(i) - bend.y * f);
+    const x=pos.getX(i);const f=(x+0.45);
+    pos.setY(i,pos.getY(i)-bend.x*f);
+    pos.setZ(i,pos.getZ(i)-bend.y*f);
   }
-
-  pos.needsUpdate = true;
-
-  velocity.y += bend.x * 0.6;
-  velocity.z += bend.y * 0.6;
+  pos.needsUpdate=true;
+  v.y+=bend.x*0.6;v.z+=bend.y*0.6;
 }
 
-/* ================= LOOP ================= */
+// ---------- Loop ----------
 function animate(){
   requestAnimationFrame(animate);
-
   if(flying){
-    shell.position.add(velocity);
-
-    shell.rotation.x += velocity.y * 3;
-    shell.rotation.z += velocity.z * 3;
-
-    if(shell.position.x >= -0.25 && !penetrated){
-      penetrated = true;
-      deformArmourTunnel(shell.position);
-      deformShellSmooth();
+    shell.position.add(v);
+    shell.rotation.x+=v.y*3;
+    shell.rotation.z+=v.z*3;
+    if(shell.position.x>=-0.25&&!hit){
+      hit=true;
+      deformArmour(shell.position);
+      deformShell();
       bendShell();
     }
-
-    if(shell.position.x >= 0.45){
-      flying = false;
-    }
+    if(shell.position.x>=0.45)flying=false;
   }
-
   renderer.render(scene,camera);
 }
 animate();
 
 window.addEventListener("resize",()=>{
-  camera.aspect = innerWidth/innerHeight;
+  camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
 });
