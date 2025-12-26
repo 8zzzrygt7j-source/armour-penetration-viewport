@@ -3,154 +3,197 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>War Thunder-Style X-Ray Penetration</title>
+<title>WT Style Armour Test</title>
 <style>
-  body{margin:0;overflow:hidden;background:black;}
-  #ui{position:absolute;top:10px;left:10px;font-family:monospace;color:white;z-index:10;}
+  html,body{margin:0;overflow:hidden;background:#000}
+  #ui{
+    position:fixed;top:10px;left:10px;z-index:10;
+    font-family:monospace;color:#fff;
+    background:rgba(0,0,0,.6);
+    padding:10px;border:1px solid rgba(255,255,255,.2)
+  }
+  button{margin-top:6px}
 </style>
 </head>
 <body>
-<div id="ui">WAR THUNDER – X-RAY TEST<br><button onclick="fire()">FIRE</button></div>
+
+<div id="ui">
+WAR THUNDER STYLE TEST<br>
+<button onclick="fire()">FIRE</button><br>
+<button onclick="resetArmour()">RESET ARMOUR</button>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
-
 <script>
-// ---------- Scene ----------
-const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x000000);
-const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,100);
-camera.position.set(1.6,0.35,3.6);
-const renderer=new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(innerWidth,innerHeight);
+/* ================= SCENE ================= */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0.6, 0.2, 2.4);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// ---------- Lighting ----------
-const amb=new THREE.AmbientLight(0x222222);
-scene.add(amb);
-const rim=new THREE.DirectionalLight(0xccccff,2.4);
-rim.position.set(-2,1,3);
-scene.add(rim);
-const fill=new THREE.DirectionalLight(0xffffff,0.6);
-fill.position.set(2,0.5,-2);
-scene.add(fill);
+/* ================= LIGHT ================= */
+scene.add(new THREE.AmbientLight(0x777777));
+const sun = new THREE.DirectionalLight(0xffffff, 2.4);
+sun.position.set(5,4,3);
+scene.add(sun);
 
-// ---------- Armour ----------
-const armourGeo=new THREE.BoxGeometry(0.65,1.6,2.6,32,36,32);
-const armourMat=new THREE.MeshStandardMaterial({
-  color:0x4a5d9e,metalness:0.95,roughness:0.3,transparent:true,opacity:0.55
+/* ================= ARMOUR ================= */
+const armourGeo = new THREE.BoxGeometry(
+  0.6, 1.8, 2.8,
+  24, 32, 24
+);
+const armourMat = new THREE.MeshStandardMaterial({
+  color:0x3550a0,
+  metalness:0.9,
+  roughness:0.35,
+  transparent:true,
+  opacity:0.45
 });
-const armour=new THREE.Mesh(armourGeo,armourMat);
+const armour = new THREE.Mesh(armourGeo, armourMat);
 scene.add(armour);
 
-// ---------- Shell builder ----------
-let shell;
-function buildShell(){
-  // 88 mm APHE-like lathe profile
-  const p=[];
-  p.push(new THREE.Vector2(0.00,0.00));
-  p.push(new THREE.Vector2(0.02,0.05));
-  p.push(new THREE.Vector2(0.035,0.12));
-  p.push(new THREE.Vector2(0.045,0.22));
-  p.push(new THREE.Vector2(0.055,0.38));
-  p.push(new THREE.Vector2(0.055,0.72));
-  p.push(new THREE.Vector2(0.05,0.80));
-  p.push(new THREE.Vector2(0.045,0.88));
-  const g=new THREE.LatheGeometry(p,64);
-  g.rotateZ(Math.PI/2);
-  g.translate(-0.45,0,0);
-  g.computeVertexNormals();
-  const m=new THREE.MeshStandardMaterial({
-    color:0x888888,metalness:1.0,roughness:0.25
-  });
-  return new THREE.Mesh(g,m);
+const armourPos = armour.geometry.attributes.position;
+const armourRest = new Float32Array(armourPos.array.length);
+armourRest.set(armourPos.array);
+
+function resetArmour(){
+  armourPos.array.set(armourRest);
+  armourPos.needsUpdate = true;
+  armour.geometry.computeVertexNormals();
 }
 
-// ---------- State ----------
-let v=new THREE.Vector3();
-let flying=false,hit=false,bend=new THREE.Vector2();
+/* ================= SHELL ================= */
+let shell;
 
-// ---------- Fire ----------
+function buildShell(){
+  // Artillery/AP profile
+  const profile = [
+    new THREE.Vector2(0.00,0.00),
+    new THREE.Vector2(0.02,0.05),
+    new THREE.Vector2(0.04,0.20),
+    new THREE.Vector2(0.055,0.45),
+    new THREE.Vector2(0.055,0.85),
+    new THREE.Vector2(0.05,0.95)
+  ];
+
+  const geo = new THREE.LatheGeometry(profile, 48);
+  geo.rotateZ(Math.PI/2);
+  geo.translate(-0.45,0,0);
+  geo.computeVertexNormals();
+
+  const mat = new THREE.MeshStandardMaterial({
+    color:0xdddddd,
+    emissive:0x222222,
+    metalness:0.9,
+    roughness:0.25
+  });
+
+  const m = new THREE.Mesh(geo, mat);
+  m.scale.set(1.6,1.6,1.6); // visibility guarantee
+  return m;
+}
+
+/* ================= STATE ================= */
+let vel = new THREE.Vector3();
+let flying = false;
+let impacted = false;
+
+/* ================= FIRE ================= */
 function fire(){
-  if(shell)scene.remove(shell);
-  shell=buildShell();scene.add(shell);
+  if(shell) scene.remove(shell);
+
+  shell = buildShell();
+  scene.add(shell);
+
   shell.position.set(-3,0,0);
   shell.rotation.set(0,0,0);
-  v.set(0.065,0,0);
-  flying=true;hit=false;
+
+  vel.set(0.05,0,0); // SLOW, readable
+  flying = true;
+  impacted = false;
 }
 
-// ---------- Armour deformation ----------
-function deformArmour(pt){
-  const pos=armour.geometry.attributes.position;
+/* ================= ARMOUR TUNNEL ================= */
+function deformArmour(point){
+  const pos = armour.geometry.attributes.position;
+
   for(let i=0;i<pos.count;i++){
-    const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i);
-    const dx=x-pt.x;const r=Math.sqrt(y*y+z*z);
-    if(Math.abs(dx)<0.45&&r<0.55){
-      const f=1-r/0.55;
-      if(dx<0)pos.setX(i,x-0.5*f);
-      else pos.setX(i,x-0.2*f);
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+
+    const dx = x - point.x;
+    const r = Math.sqrt(y*y+z*z);
+
+    if(Math.abs(dx)<0.45 && r<0.5){
+      const f = 1 - r/0.5;
+      pos.setX(i, x - f*0.35);
     }
   }
-  pos.needsUpdate=true;
+
+  pos.needsUpdate = true;
+  armour.geometry.computeVertexNormals();
 }
 
-// ---------- Shell deformation ----------
+/* ================= SHELL DEFORMATION ================= */
 function deformShell(){
-  const pos=shell.geometry.attributes.position;
+  const pos = shell.geometry.attributes.position;
+
   for(let i=0;i<pos.count;i++){
-    const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i);
-    if(x>0.18){
-      const r=Math.sqrt(y*y+z*z);
-      const f=Math.max(0,1-r/0.12);
-      const crush=0.22*f;
-      const spread=1+f*0.9;
-      pos.setX(i,x-crush);
-      pos.setY(i,y*spread);
-      pos.setZ(i,z*spread);
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+
+    if(x>0.15){
+      const r = Math.sqrt(y*y+z*z);
+      const f = Math.max(0,1-r/0.12);
+      pos.setX(i, x - f*0.22);
+      pos.setY(i, y*(1+f*1.2));
+      pos.setZ(i, z*(1+f*1.2));
     }
   }
-  // smoothing pass
+
+  // smoothing
   for(let i=1;i<pos.count-1;i++){
-    pos.setY(i,(pos.getY(i)+pos.getY(i-1))*0.5);
-    pos.setZ(i,(pos.getZ(i)+pos.getZ(i-1))*0.5);
+    pos.setY(i,(pos.getY(i-1)+pos.getY(i)+pos.getY(i+1))/3);
+    pos.setZ(i,(pos.getZ(i-1)+pos.getZ(i)+pos.getZ(i+1))/3);
   }
-  pos.needsUpdate=true;
+
+  pos.needsUpdate = true;
+  shell.geometry.computeVertexNormals();
 }
 
-// ---------- Curvature ----------
-function bendShell(){
-  bend.set((Math.random()-0.5)*0.05,(Math.random()-0.5)*0.05);
-  const pos=shell.geometry.attributes.position;
-  for(let i=0;i<pos.count;i++){
-    const x=pos.getX(i);const f=(x+0.45);
-    pos.setY(i,pos.getY(i)-bend.x*f);
-    pos.setZ(i,pos.getZ(i)-bend.y*f);
-  }
-  pos.needsUpdate=true;
-  v.y+=bend.x*0.6;v.z+=bend.y*0.6;
-}
-
-// ---------- Loop ----------
+/* ================= LOOP ================= */
 function animate(){
   requestAnimationFrame(animate);
-  if(flying){
-    shell.position.add(v);
-    shell.rotation.x+=v.y*3;
-    shell.rotation.z+=v.z*3;
-    if(shell.position.x>=-0.25&&!hit){
-      hit=true;
+
+  if(flying && shell){
+    shell.position.add(vel);
+
+    if(shell.position.x > -0.35 && !impacted){
+      impacted = true;
       deformArmour(shell.position);
       deformShell();
-      bendShell();
+      vel.y = (Math.random()-0.5)*0.02;
+      vel.z = (Math.random()-0.5)*0.02;
     }
-    if(shell.position.x>=0.45)flying=false;
+
+    if(shell.position.x > 1.8){
+      flying = false;
+    }
   }
+
   renderer.render(scene,camera);
 }
 animate();
 
-window.addEventListener("resize",()=>{
-  camera.aspect=innerWidth/innerHeight;
+addEventListener("resize",()=>{
+  camera.aspect = innerWidth/innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
 });
