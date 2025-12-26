@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WT Style Armour Test</title>
+<title>WT Style Armour Test – vFinal+</title>
 <style>
   html,body{margin:0;overflow:hidden;background:#000}
   #ui{
@@ -12,6 +12,7 @@
     background:rgba(0,0,0,.6);
     padding:10px;border:1px solid rgba(255,255,255,.2)
   }
+  input{width:160px}
   button{margin-top:6px}
 </style>
 </head>
@@ -19,7 +20,9 @@
 
 <div id="ui">
 WAR THUNDER STYLE TEST<br>
-<button onclick="fire()">FIRE</button><br>
+Armour thickness: <span id="thickVal">80</span> mm<br>
+<input id="thickness" type="range" min="20" max="200" value="80"><br>
+<button onclick="fire()">FIRE</button>
 <button onclick="resetArmour()">RESET ARMOUR</button>
 </div>
 
@@ -30,7 +33,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
 
 const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
-camera.position.set(0.6, 0.2, 2.4);
+camera.position.set(0.8, 0.25, 3.2); // pulled back
 
 const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth, innerHeight);
@@ -38,40 +41,70 @@ document.body.appendChild(renderer.domElement);
 
 /* ================= LIGHT ================= */
 scene.add(new THREE.AmbientLight(0x777777));
-const sun = new THREE.DirectionalLight(0xffffff, 2.4);
+const sun = new THREE.DirectionalLight(0xffffff, 2.5);
 sun.position.set(5,4,3);
 scene.add(sun);
 
 /* ================= ARMOUR ================= */
-const armourGeo = new THREE.BoxGeometry(
-  0.6, 1.8, 2.8,
-  24, 32, 24
-);
-const armourMat = new THREE.MeshStandardMaterial({
-  color:0x3550a0,
-  metalness:0.9,
-  roughness:0.35,
-  transparent:true,
-  opacity:0.45
-});
-const armour = new THREE.Mesh(armourGeo, armourMat);
-scene.add(armour);
+let armour, armourGeo, armourMat;
+let armourRest;
 
-const armourPos = armour.geometry.attributes.position;
-const armourRest = new Float32Array(armourPos.array.length);
-armourRest.set(armourPos.array);
+function buildArmour(){
+  if(armour) scene.remove(armour);
+
+  const mm = Number(thickness.value);
+  const depth = THREE.MathUtils.clamp(mm/120, 0.4, 1.8);
+
+  armourGeo = new THREE.BoxGeometry(
+    depth, 1.8, 2.8,
+    24, 32, 24
+  );
+
+  armourMat = new THREE.MeshStandardMaterial({
+    color:0x3550a0,
+    metalness:0.9,
+    roughness:0.35,
+    transparent:true,
+    opacity:0.45
+  });
+
+  armour = new THREE.Mesh(armourGeo, armourMat);
+  scene.add(armour);
+
+  armourRest = new Float32Array(armourGeo.attributes.position.array);
+}
+
+const thickness = document.getElementById("thickness");
+const thickVal = document.getElementById("thickVal");
+thickVal.textContent = thickness.value;
+
+thickness.oninput = () => {
+  thickVal.textContent = thickness.value;
+  buildArmour();
+};
+
+buildArmour();
 
 function resetArmour(){
-  armourPos.array.set(armourRest);
-  armourPos.needsUpdate = true;
-  armour.geometry.computeVertexNormals();
+  armourGeo.attributes.position.array.set(armourRest);
+  armourGeo.attributes.position.needsUpdate = true;
+  armourGeo.computeVertexNormals();
+}
+
+/* ================= SHAPNEL GROUPS ================= */
+const spallGroup = new THREE.Group();
+const shellFragGroup = new THREE.Group();
+scene.add(spallGroup, shellFragGroup);
+
+function clearFragments(){
+  spallGroup.clear();
+  shellFragGroup.clear();
 }
 
 /* ================= SHELL ================= */
 let shell;
 
 function buildShell(){
-  // Artillery/AP profile
   const profile = [
     new THREE.Vector2(0.00,0.00),
     new THREE.Vector2(0.02,0.05),
@@ -94,7 +127,7 @@ function buildShell(){
   });
 
   const m = new THREE.Mesh(geo, mat);
-  m.scale.set(1.6,1.6,1.6); // visibility guarantee
+  m.scale.set(1.6,1.6,1.6);
   return m;
 }
 
@@ -103,47 +136,45 @@ let vel = new THREE.Vector3();
 let flying = false;
 let impacted = false;
 
-/* ================= FIRE ================= */
-function fire(){
-  if(shell) scene.remove(shell);
+/* ================= SHAPNEL ================= */
+function spawnFragments(group, pos, color, count, speed){
+  for(let i=0;i<count;i++){
+    const g = new THREE.BoxGeometry(0.015,0.015,0.015);
+    const m = new THREE.MeshStandardMaterial({color});
+    const p = new THREE.Mesh(g,m);
 
-  shell = buildShell();
-  scene.add(shell);
-
-  shell.position.set(-3,0,0);
-  shell.rotation.set(0,0,0);
-
-  vel.set(0.05,0,0); // SLOW, readable
-  flying = true;
-  impacted = false;
+    p.position.copy(pos);
+    p.userData.v = new THREE.Vector3(
+      speed*(0.5+Math.random()),
+      (Math.random()-0.5)*speed,
+      (Math.random()-0.5)*speed
+    );
+    p.userData.life = 40+Math.random()*30;
+    group.add(p);
+  }
 }
 
-/* ================= ARMOUR TUNNEL ================= */
+/* ================= DEFORMATION ================= */
 function deformArmour(point){
-  const pos = armour.geometry.attributes.position;
-
+  const pos = armourGeo.attributes.position;
   for(let i=0;i<pos.count;i++){
     const x = pos.getX(i);
     const y = pos.getY(i);
     const z = pos.getZ(i);
 
-    const dx = x - point.x;
+    const dx = x-point.x;
     const r = Math.sqrt(y*y+z*z);
-
-    if(Math.abs(dx)<0.45 && r<0.5){
-      const f = 1 - r/0.5;
+    if(Math.abs(dx)<0.4 && r<0.5){
+      const f = 1-r/0.5;
       pos.setX(i, x - f*0.35);
     }
   }
-
   pos.needsUpdate = true;
-  armour.geometry.computeVertexNormals();
+  armourGeo.computeVertexNormals();
 }
 
-/* ================= SHELL DEFORMATION ================= */
 function deformShell(){
   const pos = shell.geometry.attributes.position;
-
   for(let i=0;i<pos.count;i++){
     const x = pos.getX(i);
     const y = pos.getY(i);
@@ -157,34 +188,53 @@ function deformShell(){
       pos.setZ(i, z*(1+f*1.2));
     }
   }
-
-  // smoothing
-  for(let i=1;i<pos.count-1;i++){
-    pos.setY(i,(pos.getY(i-1)+pos.getY(i)+pos.getY(i+1))/3);
-    pos.setZ(i,(pos.getZ(i-1)+pos.getZ(i)+pos.getZ(i+1))/3);
-  }
-
   pos.needsUpdate = true;
   shell.geometry.computeVertexNormals();
+}
+
+/* ================= FIRE ================= */
+function fire(){
+  clearFragments();
+  if(shell) scene.remove(shell);
+
+  shell = buildShell();
+  scene.add(shell);
+
+  shell.position.set(-3,0,0);
+  vel.set(0.05,0,0);
+  flying = true;
+  impacted = false;
 }
 
 /* ================= LOOP ================= */
 function animate(){
   requestAnimationFrame(animate);
 
+  for(const g of [spallGroup, shellFragGroup]){
+    g.children.forEach(p=>{
+      p.position.add(p.userData.v);
+      p.userData.life--;
+    });
+    g.children = g.children.filter(p=>p.userData.life>0);
+  }
+
   if(flying && shell){
     shell.position.add(vel);
 
-    if(shell.position.x > -0.35 && !impacted){
+    if(shell.position.x>-0.35 && !impacted){
       impacted = true;
       deformArmour(shell.position);
       deformShell();
-      vel.y = (Math.random()-0.5)*0.02;
-      vel.z = (Math.random()-0.5)*0.02;
+
+      spawnFragments(spallGroup, shell.position, 0xffdd66, 80, 0.04);
+      spawnFragments(shellFragGroup, shell.position, 0xaaaaaa, 30, -0.03);
+
+      vel.y = (Math.random()-0.5)*0.03;
+      vel.z = (Math.random()-0.5)*0.03;
     }
 
-    if(shell.position.x > 1.8){
-      flying = false;
+    if(shell.position.x>2){
+      flying=false;
     }
   }
 
@@ -193,7 +243,7 @@ function animate(){
 animate();
 
 addEventListener("resize",()=>{
-  camera.aspect = innerWidth/innerHeight;
+  camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
 });
