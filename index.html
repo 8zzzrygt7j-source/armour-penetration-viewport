@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pzgr.39 X-Ray Penetration</title>
+<title>Pzgr.39 X-Ray – Random Deformation</title>
 <style>
   body { margin:0; overflow:hidden; background:black; }
   #ui {
@@ -18,7 +18,7 @@
 <body>
 
 <div id="ui">
-Pzgr.39 – X-RAY TEST<br>
+Pzgr.39 – RANDOMIZED X-RAY<br>
 <button onclick="fire()">FIRE</button>
 </div>
 
@@ -54,47 +54,38 @@ const armourMat = new THREE.MeshStandardMaterial({
 const armour = new THREE.Mesh(armourGeo, armourMat);
 scene.add(armour);
 
-/* ---------- Pzgr.39 SHELL ---------- */
-const shell = new THREE.Group();
+/* ---------- SHELL (SINGLE MESH) ---------- */
+const shellGeo = new THREE.CylinderGeometry(
+  0.055,  // radius
+  0.055,
+  0.9,    // length
+  28,     // radial segments
+  24      // length segments (important!)
+);
+shellGeo.rotateZ(Math.PI / 2);
 
-// Penetration cap (blunt)
-const capGeo = new THREE.SphereGeometry(0.055, 16, 12);
-const capMat = new THREE.MeshStandardMaterial({ color:0x666666 });
-const cap = new THREE.Mesh(capGeo, capMat);
-cap.scale.z = 0.6;
-cap.position.x = 0.32;
-shell.add(cap);
+const shellMat = new THREE.MeshStandardMaterial({
+  color: 0x777777,
+  metalness: 0.8,
+  roughness: 0.4
+});
 
-// Shell body (long steel rod)
-const bodyGeo = new THREE.CylinderGeometry(0.05,0.05,0.65,20);
-const bodyMat = new THREE.MeshStandardMaterial({ color:0x777777 });
-const body = new THREE.Mesh(bodyGeo, bodyMat);
-body.rotation.z = Math.PI/2;
-shell.add(body);
-
-// Base (tracer / base plug)
-const baseGeo = new THREE.CylinderGeometry(0.045,0.045,0.12,12);
-const baseMat = new THREE.MeshStandardMaterial({ color:0x555555 });
-const base = new THREE.Mesh(baseGeo, baseMat);
-base.rotation.z = Math.PI/2;
-base.position.x = -0.38;
-shell.add(base);
-
+const shell = new THREE.Mesh(shellGeo, shellMat);
 scene.add(shell);
 
 /* ---------- STATE ---------- */
 let velocity = new THREE.Vector3();
 let flying = false;
-let crushed = false;
+let penetrated = false;
 
 /* ---------- FIRE ---------- */
 function fire(){
   shell.position.set(-3,0,0);
-  shell.scale.set(1,1,1);
   shell.rotation.set(0,0,0);
-  velocity.set(0.06,0,0); // full slow-mo
+  shell.scale.set(1,1,1);
+  velocity.set(0.06, 0, 0);
   flying = true;
-  crushed = false;
+  penetrated = false;
 }
 
 /* ---------- ARMOUR DEFORMATION ---------- */
@@ -112,24 +103,33 @@ function deformArmour(point){
   pos.needsUpdate = true;
 }
 
-/* ---------- SHELL DEFORMATION (BRUTAL) ---------- */
-function crushShell(){
-  // Cap pancakes
-  cap.scale.set(1.8,1.8,0.25);
-  cap.position.x -= 0.05;
+/* ---------- RANDOM TIP DEFORMATION ---------- */
+function deformShellTip(){
+  const pos = shell.geometry.attributes.position;
 
-  // Body buckles
-  body.scale.set(1.4,0.85,1.4);
-  body.position.x -= 0.08;
+  for(let i=0;i<pos.count;i++){
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
 
-  // Base shortens
-  base.scale.set(1,1,0.6);
-  base.position.x += 0.04;
+    // Only affect the nose (front ~25%)
+    if(x > 0.25){
+      const crush = (Math.random()*0.25 + 0.15);
+      const asym = (Math.random()-0.5)*0.1;
 
-  // Entire shell shortens
-  shell.scale.x = 0.75;
+      pos.setX(i, x - crush);
+      pos.setY(i, y + asym);
+      pos.setZ(i, z + asym);
+    }
+  }
 
-  crushed = true;
+  pos.needsUpdate = true;
+}
+
+/* ---------- RANDOM DEFLECTION ---------- */
+function deflectShell(){
+  velocity.y += (Math.random() - 0.5) * 0.02;
+  velocity.z += (Math.random() - 0.5) * 0.02;
 }
 
 /* ---------- LOOP ---------- */
@@ -138,16 +138,21 @@ function animate(){
 
   if(flying){
     shell.position.add(velocity);
-    shell.rotation.x += 0.08;
+
+    // slight spin instability
+    shell.rotation.x += velocity.y * 4;
+    shell.rotation.z += velocity.z * 4;
 
     // impact
-    if(shell.position.x >= -0.25 && !crushed){
+    if(shell.position.x >= -0.25 && !penetrated){
+      penetrated = true;
       deformArmour(shell.position);
-      crushShell();
+      deformShellTip();
+      deflectShell();
     }
 
     // stop inside armour
-    if(shell.position.x >= 0.35){
+    if(shell.position.x >= 0.4){
       flying = false;
     }
   }
