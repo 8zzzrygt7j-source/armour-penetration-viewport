@@ -3,26 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Armor Penetration Simulator</title>
+<title>Armour Penetration Simulator</title>
 <style>
   body { margin:0; overflow:hidden; background:black; }
   #ui {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    color: white;
+    position:absolute;
+    top:10px; left:10px;
     font-family: monospace;
-    z-index: 10;
-    background: rgba(0,0,0,0.5);
-    padding: 10px;
+    color:white;
+    z-index:10;
   }
 </style>
 </head>
 <body>
 
 <div id="ui">
-ANGLE: <span id="angleVal">0</span>°<br>
-<input type="range" id="angle" min="0" max="75" value="0"><br><br>
+ANGLE: <span id="ang">30</span>°<br>
+<input type="range" id="angle" min="0" max="75" value="30"><br><br>
 <button onclick="fire()">FIRE</button>
 </div>
 
@@ -33,122 +30,94 @@ ANGLE: <span id="angleVal">0</span>°<br>
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
 
-const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 100);
-camera.position.set(0,1,7);
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 0.5, 5);
 
-const renderer = new THREE.WebGLRenderer({antialias:true});
+const renderer = new THREE.WebGLRenderer({ antialias:true });
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
 /* ---------- LIGHT ---------- */
-scene.add(new THREE.AmbientLight(0x404040));
-const light = new THREE.PointLight(0xffffff, 2);
+scene.add(new THREE.AmbientLight(0x555555));
+const light = new THREE.DirectionalLight(0xffffff, 1.2);
 light.position.set(5,5,5);
 scene.add(light);
 
-/* ---------- ARMOR ---------- */
-const armorGeo = new THREE.BoxGeometry(4,2,0.3,10,5,2);
-const armorMat = new THREE.MeshStandardMaterial({
-  color: 0x3355ff,
-  metalness: 0.9,
-  roughness: 0.3
+/* ---------- ARMOUR TEXTURE ---------- */
+const canvas = document.createElement("canvas");
+canvas.width = canvas.height = 256;
+const ctx = canvas.getContext("2d");
+
+ctx.fillStyle = "#2b3f7a";
+ctx.fillRect(0,0,256,256);
+for(let i=0;i<3000;i++){
+  const x=Math.random()*256,y=Math.random()*256;
+  const v=40+Math.random()*40;
+  ctx.fillStyle=`rgb(${v},${v},${v})`;
+  ctx.fillRect(x,y,1,1);
+}
+const armourTexture = new THREE.CanvasTexture(canvas);
+
+/* ---------- ARMOUR ---------- */
+const armourGeo = new THREE.PlaneGeometry(3,1.5,30,15);
+const armourMat = new THREE.MeshStandardMaterial({
+  map: armourTexture,
+  metalness: 0.8,
+  roughness: 0.4
 });
-const armor = new THREE.Mesh(armorGeo, armorMat);
-scene.add(armor);
+const armour = new THREE.Mesh(armourGeo, armourMat);
+scene.add(armour);
 
 /* ---------- SHELL ---------- */
-const shellGeo = new THREE.CylinderGeometry(0.08,0.1,0.5,16);
+const shellGeo = new THREE.SphereGeometry(0.06,16,16);
 const shellMat = new THREE.MeshStandardMaterial({
   color: 0xffaa00,
-  emissive: 0x331100
+  emissive: 0x552200
 });
 const shell = new THREE.Mesh(shellGeo, shellMat);
-shell.rotation.z = Math.PI/2;
 scene.add(shell);
 
-/* ---------- UI ---------- */
-const angleSlider = document.getElementById("angle");
-const angleVal = document.getElementById("angleVal");
-angleSlider.oninput = () => angleVal.textContent = angleSlider.value;
-
-/* ---------- STATE ---------- */
 let velocity = new THREE.Vector3();
-let active = false;
+let flying = false;
 
-/* ---------- SPARKS ---------- */
-function sparks(pos,color=0xff6600) {
-  const geo = new THREE.BufferGeometry();
-  const verts = [];
-  for (let i=0;i<60;i++) verts.push(pos.x,pos.y,pos.z);
-  geo.setAttribute("position", new THREE.Float32BufferAttribute(verts,3));
-  const mat = new THREE.PointsMaterial({color,size:0.05});
-  const pts = new THREE.Points(geo,mat);
-  scene.add(pts);
-
-  let s=0;
-  function anim(){
-    s+=0.03;
-    pts.scale.set(s,s,s);
-    mat.opacity -= 0.03;
-    mat.transparent=true;
-    if(mat.opacity>0) requestAnimationFrame(anim);
-    else scene.remove(pts);
-  }
-  anim();
-}
+/* ---------- UI ---------- */
+const slider = document.getElementById("angle");
+const angText = document.getElementById("ang");
+slider.oninput = () => angText.textContent = slider.value;
 
 /* ---------- FIRE ---------- */
-function fire() {
-  shell.position.set(-6,0,0);
+function fire(){
+  shell.position.set(-3,0,0);
   shell.scale.set(1,1,1);
-  shell.material.color.set(0xffaa00);
-
-  armor.material.color.set(0x3355ff);
-
-  const ang = THREE.MathUtils.degToRad(angleSlider.value);
-  velocity.set(
-    Math.cos(ang)*0.25,
-    Math.sin(ang)*0.15,
-    0
-  );
-  active = true;
+  const a = THREE.MathUtils.degToRad(slider.value);
+  velocity.set(Math.cos(a)*0.25, Math.sin(a)*0.1, 0);
+  flying = true;
 }
 
 /* ---------- IMPACT ---------- */
-function impact() {
-  active = false;
-
-  const angle = angleSlider.value;
-  const effectiveArmor = 50 / Math.cos(angle * Math.PI/180); // fake mm
-  const shellPen = 80; // fake mm
-
-  if (shellPen > effectiveArmor && angle < 70) {
-    // PENETRATION
-    shell.scale.set(1.4,0.6,1.4);
-    shell.material.color.set(0x333333);
-
-    armor.geometry.attributes.position.array.forEach((v,i)=>{
-      if(i%3===2) armor.geometry.attributes.position.array[i]-=Math.random()*0.08;
-    });
-    armor.geometry.attributes.position.needsUpdate=true;
-
-    sparks(shell.position,0xffaa00);
-  } else {
-    // RICOCHET
-    velocity.x *= -0.6;
-    velocity.y += 0.1;
-    sparks(shell.position,0xffffff);
+function deformArmour(point){
+  const pos = armour.geometry.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const dx = pos.getX(i)-point.x;
+    const dy = pos.getY(i)-point.y;
+    const d = Math.sqrt(dx*dx+dy*dy);
+    if(d < 0.25){
+      pos.setZ(i, -0.15*(1-d/0.25));
+    }
   }
+  pos.needsUpdate = true;
 }
 
 /* ---------- LOOP ---------- */
 function animate(){
   requestAnimationFrame(animate);
 
-  if(active){
+  if(flying){
     shell.position.add(velocity);
-    if(shell.position.x > -0.1){
-      impact();
+    if(shell.position.x > 0){
+      flying = false;
+      deformArmour(shell.position);
+      shell.scale.set(1.3,0.6,1.3);
     }
   }
 
