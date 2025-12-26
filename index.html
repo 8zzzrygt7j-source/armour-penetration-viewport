@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WT Style Straight-Line Penetration</title>
+<title>WT Style 3D Penetration – Corrected</title>
 <style>
 html,body{margin:0;overflow:hidden;background:#000}
 #ui{
@@ -19,7 +19,7 @@ button{margin-top:6px}
 <body>
 
 <div id="ui">
-WT STYLE – STRAIGHT PENETRATION<br>
+WT STYLE – FULL 3D<br>
 Armour thickness: <span id="thv">80</span> mm<br>
 <input id="thickness" type="range" min="20" max="200" value="80"><br>
 <button onclick="fire()">FIRE</button>
@@ -32,8 +32,9 @@ Armour thickness: <span id="thv">80</span> mm<br>
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
 
+// Camera in real 3D angle
 const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
-camera.position.set(1.6, 0.6, 3.8);
+camera.position.set(3.2, 2.2, 3.6);
 camera.lookAt(0,0,0);
 
 const renderer = new THREE.WebGLRenderer({antialias:true});
@@ -42,8 +43,8 @@ document.body.appendChild(renderer.domElement);
 
 /* ================= LIGHT ================= */
 scene.add(new THREE.AmbientLight(0x666666));
-const sun = new THREE.DirectionalLight(0xffffff, 2.6);
-sun.position.set(5,6,4);
+const sun = new THREE.DirectionalLight(0xffffff, 2.8);
+sun.position.set(6,6,6);
 scene.add(sun);
 
 /* ================= ARMOUR ================= */
@@ -53,15 +54,16 @@ function buildArmour(){
   if(armour) scene.remove(armour);
 
   const mm = Number(thickness.value);
-  const depth = THREE.MathUtils.clamp(mm/80, 0.4, 2.2);
+  const depth = THREE.MathUtils.clamp(mm / 60, 0.6, 3.2);
 
+  // Armour slab centered at origin, depth on Z
   armourGeo = new THREE.BoxGeometry(
-    2.6, 2.0, depth,
+    2.4, 2.0, depth,
     36, 36, 48
   );
 
   armourMat = new THREE.MeshStandardMaterial({
-    color:0x304fa8,
+    color:0x2f4fa8,
     metalness:0.9,
     roughness:0.35,
     transparent:true,
@@ -69,7 +71,6 @@ function buildArmour(){
   });
 
   armour = new THREE.Mesh(armourGeo, armourMat);
-  armour.rotation.y = Math.PI/2;
   scene.add(armour);
 
   armourRest = new Float32Array(armourGeo.attributes.position.array);
@@ -106,8 +107,8 @@ function buildShell(){
   ];
 
   const geo = new THREE.LatheGeometry(profile, 64);
-  geo.rotateX(Math.PI/2);
-  geo.translate(0,0,-0.5);
+  geo.rotateX(Math.PI/2);          // align along +Z
+  geo.translate(0,0,-0.5);         // nose at front
   geo.computeVertexNormals();
 
   const mat = new THREE.MeshStandardMaterial({
@@ -125,56 +126,30 @@ function buildShell(){
 /* ================= STATE ================= */
 let velZ = 0;
 let flying = false;
-let penetrated = false;
+let impacted = false;
+let penetrates = false;
 
 /* ================= DEFORMATION ================= */
-function deformArmourTunnel(entryZ, exit=false){
-  const pos = armourGeo.attributes.position;
-
-  for(let i=0;i<pos.count;i++){
-    let x = pos.getX(i);
-    let y = pos.getY(i);
-    let z = pos.getZ(i);
-
-    const r = Math.sqrt(x*x + y*y);
-    if(r < 0.6){
-      const fall = 1 - r/0.6;
-
-      // entry crater + bore
-      if(z > entryZ){
-        pos.setZ(i, z - fall*0.45);
-      }
-
-      // exit bulge only if penetration
-      if(exit && z < -entryZ){
-        pos.setZ(i, z + fall*0.25);
-      }
-    }
-  }
-
-  pos.needsUpdate = true;
-  armourGeo.computeVertexNormals();
-}
-
 function deformShell(){
   const pos = shell.geometry.attributes.position;
 
   for(let i=0;i<pos.count;i++){
-    let x = pos.getX(i);
-    let y = pos.getY(i);
-    let z = pos.getZ(i);
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
 
+    // deform only nose region
     if(z > -0.05){
       const r = Math.sqrt(x*x + y*y);
-      const fall = Math.max(0,1-r/0.18);
+      const fall = Math.max(0,1 - r/0.18);
 
       pos.setZ(i, z - fall*0.28);
-      pos.setX(i, x*(1+fall*1.8));
-      pos.setY(i, y*(1+fall*1.8));
+      pos.setX(i, x*(1 + fall*1.6));
+      pos.setY(i, y*(1 + fall*1.6));
     }
   }
 
-  // smoothing
+  // smoothing passes
   for(let p=0;p<3;p++){
     for(let i=1;i<pos.count-1;i++){
       pos.setX(i,(pos.getX(i-1)+pos.getX(i)+pos.getX(i+1))/3);
@@ -186,16 +161,42 @@ function deformShell(){
   shell.geometry.computeVertexNormals();
 }
 
+function deformArmourTunnel(entryZ, exitZ){
+  const pos = armourGeo.attributes.position;
+
+  for(let i=0;i<pos.count;i++){
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+
+    const r = Math.sqrt(x*x + y*y);
+
+    // Only deform along shell axis (Z)
+    if(r < 0.6 && z > entryZ && z < exitZ){
+      const fall = 1 - r/0.6;
+      pos.setZ(i, z - fall*0.45);
+    }
+  }
+
+  pos.needsUpdate = true;
+  armourGeo.computeVertexNormals();
+}
+
 /* ================= FIRE ================= */
 function fire(){
   if(shell) scene.remove(shell);
   shell = buildShell();
   scene.add(shell);
 
-  shell.position.set(0,0,-3);
-  velZ = 0.08;
+  // start in front of armour
+  shell.position.set(0,0,-4);
+
+  velZ = 0.09;
   flying = true;
-  penetrated = false;
+  impacted = false;
+
+  // simple WT-like penetration threshold
+  penetrates = Number(thickness.value) < 120;
 }
 
 /* ================= LOOP ================= */
@@ -206,22 +207,24 @@ function animate(){
     shell.position.z += velZ;
 
     // impact at front face
-    if(shell.position.z >= -0.4 && !penetrated){
+    const frontFaceZ = -armour.geometry.parameters.depth/2;
+
+    if(shell.position.z >= frontFaceZ && !impacted){
+      impacted = true;
       deformShell();
 
-      const mm = Number(thickness.value);
-      penetrated = mm < 120; // simple threshold (WT-like)
-
-      deformArmourTunnel(shell.position.z, penetrated);
-
-      if(!penetrated){
-        velZ = 0; // STOP inside armour
+      if(penetrates){
+        const backFaceZ = armour.geometry.parameters.depth/2;
+        deformArmourTunnel(frontFaceZ, backFaceZ);
+      } else {
+        deformArmourTunnel(frontFaceZ, frontFaceZ + 0.6);
+        velZ = 0;
         flying = false;
       }
     }
 
     // exit if penetrated
-    if(penetrated && shell.position.z > 1.4){
+    if(penetrates && shell.position.z > armour.geometry.parameters.depth/2 + 1){
       flying = false;
     }
   }
