@@ -3,14 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WT Style 3D Armour Penetration</title>
+<title>Armour Penetration Lab</title>
 <style>
-html,body{margin:0;overflow:hidden;background:#000}
+html,body{
+  margin:0;
+  overflow:hidden;
+  background:#000;
+}
 #ui{
-  position:fixed;top:10px;left:10px;z-index:10;
-  font-family:monospace;color:#fff;
-  background:rgba(0,0,0,.65);
-  padding:10px;border:1px solid rgba(255,255,255,.2)
+  position:fixed;
+  top:10px;
+  left:10px;
+  z-index:10;
+  font-family:monospace;
+  color:#fff;
+  background:rgba(0,0,0,0.65);
+  padding:10px;
+  border:1px solid rgba(255,255,255,0.2);
 }
 input{width:160px}
 button{margin-top:6px}
@@ -19,55 +28,50 @@ button{margin-top:6px}
 <body>
 
 <div id="ui">
-WT STYLE – TRUE 3D<br>
-Armour thickness: <span id="thv">80</span> mm<br>
+ARMOUR PENETRATION LAB<br><br>
+Thickness: <span id="thv">80</span> mm<br>
 <input id="thickness" type="range" min="20" max="200" value="80"><br>
 <button id="fire">FIRE</button>
 <button id="reset">RESET ARMOUR</button>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
-
 <script>
-/* ======================================================
-   SCENE + RENDERER
-====================================================== */
+/* =====================================================
+   SCENE & CAMERA (STEADY, CENTERED)
+===================================================== */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 0.9, 6);
+camera.lookAt(0, 0, 0);
 
 const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
-const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
-camera.position.set(4, 3, 4);
-
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
-controls.target.set(0,0,0);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-
-/* ======================================================
+/* =====================================================
    LIGHTING
-====================================================== */
+===================================================== */
 scene.add(new THREE.AmbientLight(0x666666));
-const sun = new THREE.DirectionalLight(0xffffff, 2.8);
-sun.position.set(6,6,6);
+
+const sun = new THREE.DirectionalLight(0xffffff, 2.6);
+sun.position.set(4,6,6);
 scene.add(sun);
 
-/* ======================================================
+/* =====================================================
    ARMOUR
-====================================================== */
+===================================================== */
 let armour, armourGeo, armourRest;
 
 function buildArmour(mm){
   if(armour) scene.remove(armour);
 
-  const depth = THREE.MathUtils.clamp(mm/60, 0.6, 3.2);
+  const depth = THREE.MathUtils.clamp(mm / 60, 0.6, 3.0);
 
   armourGeo = new THREE.BoxGeometry(
-    2.5, 2.0, depth,
+    2.6, 2.0, depth,
     40, 40, 60
   );
 
@@ -76,10 +80,11 @@ function buildArmour(mm){
     metalness:0.9,
     roughness:0.35,
     transparent:true,
-    opacity:0.45
+    opacity:0.5
   });
 
   armour = new THREE.Mesh(armourGeo, mat);
+  armour.position.set(0,0,0); // FORCE CENTER
   scene.add(armour);
 
   armourRest = new Float32Array(armourGeo.attributes.position.array);
@@ -91,13 +96,12 @@ function resetArmour(){
   armourGeo.computeVertexNormals();
 }
 
-/* ======================================================
-   SHELL (FORWARD-FACING, GUARANTEED)
-====================================================== */
+/* =====================================================
+   SHELL (FORWARD-FACING)
+===================================================== */
 let shell;
 
 function buildShell(){
-  // Lathe profile (nose → base)
   const profile = [
     new THREE.Vector2(0.00,0.00),
     new THREE.Vector2(0.02,0.05),
@@ -108,9 +112,7 @@ function buildShell(){
   ];
 
   const geo = new THREE.LatheGeometry(profile, 64);
-
-  // Orient along +Z (FORWARD)
-  geo.rotateX(-Math.PI/2);
+  geo.rotateX(-Math.PI/2); // face +Z
   geo.translate(0,0,0.5);
   geo.computeVertexNormals();
 
@@ -126,10 +128,10 @@ function buildShell(){
   return m;
 }
 
-/* ======================================================
+/* =====================================================
    DEFORMATION
-====================================================== */
-function deformShellExtreme(){
+===================================================== */
+function deformShell(){
   const pos = shell.geometry.attributes.position;
 
   for(let i=0;i<pos.count;i++){
@@ -137,17 +139,16 @@ function deformShellExtreme(){
     const y = pos.getY(i);
     const z = pos.getZ(i);
 
-    if(z > 0.0){
+    if(z > 0){
       const r = Math.sqrt(x*x + y*y);
-      const fall = Math.max(0,1-r/0.18);
+      const f = Math.max(0,1-r/0.18);
 
-      pos.setZ(i, z - fall*0.35);
-      pos.setX(i, x*(1 + fall*1.8));
-      pos.setY(i, y*(1 + fall*1.8));
+      pos.setZ(i, z - f*0.35);
+      pos.setX(i, x*(1 + f*1.8));
+      pos.setY(i, y*(1 + f*1.8));
     }
   }
 
-  // smooth
   for(let p=0;p<3;p++){
     for(let i=1;i<pos.count-1;i++){
       pos.setX(i,(pos.getX(i-1)+pos.getX(i)+pos.getX(i+1))/3);
@@ -169,8 +170,8 @@ function deformArmourTunnel(zStart, zEnd){
 
     const r = Math.sqrt(x*x + y*y);
     if(r < 0.6 && z > zStart && z < zEnd){
-      const fall = 1 - r/0.6;
-      pos.setZ(i, z - fall*0.45);
+      const f = 1 - r/0.6;
+      pos.setZ(i, z - f*0.45);
     }
   }
 
@@ -178,17 +179,14 @@ function deformArmourTunnel(zStart, zEnd){
   armourGeo.computeVertexNormals();
 }
 
-/* ======================================================
-   SIMULATION STATE
-====================================================== */
+/* =====================================================
+   SIMULATION
+===================================================== */
 let velZ = 0;
 let flying = false;
 let impacted = false;
 let penetrates = false;
 
-/* ======================================================
-   FIRE
-====================================================== */
 function fire(){
   if(shell) scene.remove(shell);
 
@@ -203,9 +201,9 @@ function fire(){
   penetrates = Number(thickness.value) < 120;
 }
 
-/* ======================================================
+/* =====================================================
    LOOP
-====================================================== */
+===================================================== */
 function animate(){
   requestAnimationFrame(animate);
 
@@ -217,12 +215,12 @@ function animate(){
 
     if(shell.position.z >= frontZ && !impacted){
       impacted = true;
-      deformShellExtreme();
+      deformShell();
 
       if(penetrates){
         deformArmourTunnel(frontZ, backZ);
       } else {
-        deformArmourTunnel(frontZ, frontZ+0.6);
+        deformArmourTunnel(frontZ, frontZ + 0.6);
         velZ = 0;
         flying = false;
       }
@@ -233,18 +231,17 @@ function animate(){
     }
   }
 
-  controls.update();
-  renderer.render(scene,camera);
+  renderer.render(scene, camera);
 }
 animate();
 
-/* ======================================================
+/* =====================================================
    UI
-====================================================== */
+===================================================== */
 const thickness = document.getElementById("thickness");
 const thv = document.getElementById("thv");
-
 thv.textContent = thickness.value;
+
 thickness.oninput = ()=>{
   thv.textContent = thickness.value;
   buildArmour(Number(thickness.value));
