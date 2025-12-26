@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Armour Penetration – Side View</title>
+<title>Armour Penetration – Slow Motion</title>
 <style>
   body { margin:0; overflow:hidden; background:black; }
   #ui {
@@ -18,6 +18,7 @@
 <body>
 
 <div id="ui">
+FULL SLOW MOTION<br>
 <button onclick="fire()">FIRE</button>
 </div>
 
@@ -29,93 +30,104 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 100);
-camera.position.set(0, 0, 5);
+camera.position.set(0, 0.3, 4);
 
 const renderer = new THREE.WebGLRenderer({ antialias:true });
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
 /* ---------- LIGHT ---------- */
-scene.add(new THREE.AmbientLight(0x444444));
-const light = new THREE.DirectionalLight(0xffffff, 1.4);
-light.position.set(5,5,5);
-scene.add(light);
+scene.add(new THREE.AmbientLight(0x555555));
+const key = new THREE.DirectionalLight(0xffffff, 1.8);
+key.position.set(5,4,3);
+scene.add(key);
 
 /* ---------- ARMOUR TEXTURE ---------- */
-const texCanvas = document.createElement("canvas");
-texCanvas.width = texCanvas.height = 256;
-const ctx = texCanvas.getContext("2d");
-
-ctx.fillStyle = "#3b4f8a";
+const tex = document.createElement("canvas");
+tex.width = tex.height = 256;
+const ctx = tex.getContext("2d");
+ctx.fillStyle = "#3a4d88";
 ctx.fillRect(0,0,256,256);
-for(let i=0;i<4000;i++){
+for(let i=0;i<5000;i++){
   const x=Math.random()*256,y=Math.random()*256;
-  const v=50+Math.random()*40;
+  const v=40+Math.random()*50;
   ctx.fillStyle=`rgb(${v},${v},${v})`;
   ctx.fillRect(x,y,1,1);
 }
-const armourTex = new THREE.CanvasTexture(texCanvas);
+const armourTex = new THREE.CanvasTexture(tex);
 
-/* ---------- ARMOUR (SIDE VIEW) ---------- */
-const armourGeo = new THREE.BoxGeometry(0.4, 1.6, 2.5, 6, 12, 6);
+/* ---------- ARMOUR ---------- */
+const armourGeo = new THREE.BoxGeometry(0.5, 1.8, 2.8, 8, 16, 8);
 const armourMat = new THREE.MeshStandardMaterial({
   map: armourTex,
-  metalness: 0.85,
-  roughness: 0.35
+  metalness: 0.9,
+  roughness: 0.3
 });
 const armour = new THREE.Mesh(armourGeo, armourMat);
 scene.add(armour);
 
-/* ---------- SHELL ---------- */
-const shellGeo = new THREE.SphereGeometry(0.06, 16, 16);
-const shellMat = new THREE.MeshStandardMaterial({
-  color: 0xffaa00,
-  emissive: 0x662200
+/* ---------- SHELL (REAL AP SHAPE) ---------- */
+const shellGroup = new THREE.Group();
+
+// body
+const bodyGeo = new THREE.CylinderGeometry(0.05,0.05,0.5,16);
+const bodyMat = new THREE.MeshStandardMaterial({ color:0x777777 });
+const body = new THREE.Mesh(bodyGeo, bodyMat);
+body.rotation.z = Math.PI/2;
+shellGroup.add(body);
+
+// tip
+const tipGeo = new THREE.ConeGeometry(0.05,0.12,16);
+const tipMat = new THREE.MeshStandardMaterial({
+  color:0xffaa00,
+  emissive:0xff5500
 });
-const shell = new THREE.Mesh(shellGeo, shellMat);
-scene.add(shell);
+const tip = new THREE.Mesh(tipGeo, tipMat);
+tip.rotation.z = Math.PI/2;
+tip.position.x = 0.31;
+shellGroup.add(tip);
+
+scene.add(shellGroup);
+
+let velocity = new THREE.Vector3();
+let flying = false;
 
 /* ---------- TRAIL ---------- */
 const trailGeo = new THREE.BufferGeometry();
 trailGeo.setAttribute("position", new THREE.Float32BufferAttribute([0,0,0, 0,0,0], 3));
-const trailMat = new THREE.LineBasicMaterial({ color: 0xffaa00 });
+const trailMat = new THREE.LineBasicMaterial({ color:0xffaa00, linewidth:2 });
 const trail = new THREE.Line(trailGeo, trailMat);
 scene.add(trail);
 
-/* ---------- STATE ---------- */
-let velocity = new THREE.Vector3();
-let flying = false;
-let slowmo = false;
-
 /* ---------- FIRE ---------- */
 function fire(){
-  shell.position.set(-3, 0, 0);
-  shell.scale.set(1,1,1);
-  velocity.set(0.35, 0, 0);
+  shellGroup.position.set(-3,0,0);
+  shellGroup.scale.set(1,1,1);
+  velocity.set(0.08,0,0); // slow motion speed
   flying = true;
 }
 
-/* ---------- SPARKS ---------- */
+/* ---------- SPARK BLAST ---------- */
 function sparks(pos){
   const geo = new THREE.BufferGeometry();
   const verts=[];
-  for(let i=0;i<40;i++){
-    verts.push(pos.x, pos.y, pos.z);
+  for(let i=0;i<120;i++){
+    verts.push(pos.x,pos.y,pos.z);
   }
   geo.setAttribute("position", new THREE.Float32BufferAttribute(verts,3));
   const mat = new THREE.PointsMaterial({
-    color: 0xffcc55,
-    size: 0.05
+    color:0xffcc55,
+    size:0.07
   });
   const pts = new THREE.Points(geo, mat);
   scene.add(pts);
 
   let s=0;
   function anim(){
-    s+=0.05;
+    s+=0.08;
     pts.scale.set(s,s,s);
-    mat.opacity -= 0.05;
-    mat.transparent = true;
+    mat.opacity -= 0.04;
+    mat.transparent=true;
     if(mat.opacity>0) requestAnimationFrame(anim);
     else scene.remove(pts);
   }
@@ -130,8 +142,8 @@ function deform(point){
     const dy = pos.getY(i)-point.y;
     const dz = pos.getZ(i)-point.z;
     const d = Math.sqrt(dx*dx+dy*dy+dz*dz);
-    if(d < 0.35){
-      pos.setX(i, pos.getX(i)-0.15*(1-d/0.35));
+    if(d < 0.45){
+      pos.setX(i, pos.getX(i)-0.25*(1-d/0.45));
     }
   }
   pos.needsUpdate = true;
@@ -141,22 +153,27 @@ function deform(point){
 function animate(){
   requestAnimationFrame(animate);
 
-  const step = slowmo ? 0.3 : 1;
-
   if(flying){
-    shell.position.addScaledVector(velocity, step);
+    shellGroup.position.add(velocity);
+    shellGroup.rotation.x += 0.15;
 
-    trail.geometry.attributes.position.setXYZ(0, shell.position.x, shell.position.y, shell.position.z);
-    trail.geometry.attributes.position.setXYZ(1, shell.position.x-0.3, 0, 0);
+    trail.geometry.attributes.position.setXYZ(0,
+      shellGroup.position.x,
+      shellGroup.position.y,
+      shellGroup.position.z
+    );
+    trail.geometry.attributes.position.setXYZ(1,
+      shellGroup.position.x-0.6,
+      0,
+      0
+    );
     trail.geometry.attributes.position.needsUpdate = true;
 
-    if(shell.position.x >= -0.2){
-      flying = false;
-      slowmo = true;
-      deform(shell.position);
-      sparks(shell.position);
-      shell.scale.set(1.4,0.6,1.4);
-      setTimeout(()=>slowmo=false, 300);
+    if(shellGroup.position.x >= -0.25){
+      flying=false;
+      deform(shellGroup.position);
+      sparks(shellGroup.position);
+      shellGroup.scale.set(1.6,0.6,1.6);
     }
   }
 
