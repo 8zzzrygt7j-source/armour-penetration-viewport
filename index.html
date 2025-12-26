@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WT Style 3D Penetration – Corrected</title>
+<title>WT Style 3D Armour Penetration</title>
 <style>
 html,body{margin:0;overflow:hidden;background:#000}
 #ui{
   position:fixed;top:10px;left:10px;z-index:10;
   font-family:monospace;color:#fff;
-  background:rgba(0,0,0,.6);
+  background:rgba(0,0,0,.65);
   padding:10px;border:1px solid rgba(255,255,255,.2)
 }
 input{width:160px}
@@ -19,73 +19,71 @@ button{margin-top:6px}
 <body>
 
 <div id="ui">
-WT STYLE – FULL 3D<br>
+WT STYLE – TRUE 3D<br>
 Armour thickness: <span id="thv">80</span> mm<br>
 <input id="thickness" type="range" min="20" max="200" value="80"><br>
-<button onclick="fire()">FIRE</button>
-<button onclick="resetArmour()">RESET ARMOUR</button>
+<button id="fire">FIRE</button>
+<button id="reset">RESET ARMOUR</button>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+
 <script>
-/* ================= SCENE ================= */
+/* ======================================================
+   SCENE + RENDERER
+====================================================== */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
-
-// Camera in real 3D angle
-const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
-camera.position.set(3.2, 2.2, 3.6);
-camera.lookAt(0,0,0);
 
 const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
-/* ================= LIGHT ================= */
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(4, 3, 4);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(0,0,0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+/* ======================================================
+   LIGHTING
+====================================================== */
 scene.add(new THREE.AmbientLight(0x666666));
 const sun = new THREE.DirectionalLight(0xffffff, 2.8);
 sun.position.set(6,6,6);
 scene.add(sun);
 
-/* ================= ARMOUR ================= */
-let armour, armourGeo, armourMat, armourRest;
+/* ======================================================
+   ARMOUR
+====================================================== */
+let armour, armourGeo, armourRest;
 
-function buildArmour(){
+function buildArmour(mm){
   if(armour) scene.remove(armour);
 
-  const mm = Number(thickness.value);
-  const depth = THREE.MathUtils.clamp(mm / 60, 0.6, 3.2);
+  const depth = THREE.MathUtils.clamp(mm/60, 0.6, 3.2);
 
-  // Armour slab centered at origin, depth on Z
   armourGeo = new THREE.BoxGeometry(
-    2.4, 2.0, depth,
-    36, 36, 48
+    2.5, 2.0, depth,
+    40, 40, 60
   );
 
-  armourMat = new THREE.MeshStandardMaterial({
+  const mat = new THREE.MeshStandardMaterial({
     color:0x2f4fa8,
     metalness:0.9,
     roughness:0.35,
     transparent:true,
-    opacity:0.5
+    opacity:0.45
   });
 
-  armour = new THREE.Mesh(armourGeo, armourMat);
+  armour = new THREE.Mesh(armourGeo, mat);
   scene.add(armour);
 
   armourRest = new Float32Array(armourGeo.attributes.position.array);
 }
-
-const thickness = document.getElementById("thickness");
-const thv = document.getElementById("thv");
-thv.textContent = thickness.value;
-
-thickness.oninput = ()=>{
-  thv.textContent = thickness.value;
-  buildArmour();
-};
-
-buildArmour();
 
 function resetArmour(){
   armourGeo.attributes.position.array.set(armourRest);
@@ -93,10 +91,13 @@ function resetArmour(){
   armourGeo.computeVertexNormals();
 }
 
-/* ================= SHELL ================= */
+/* ======================================================
+   SHELL (FORWARD-FACING, GUARANTEED)
+====================================================== */
 let shell;
 
 function buildShell(){
+  // Lathe profile (nose → base)
   const profile = [
     new THREE.Vector2(0.00,0.00),
     new THREE.Vector2(0.02,0.05),
@@ -107,8 +108,10 @@ function buildShell(){
   ];
 
   const geo = new THREE.LatheGeometry(profile, 64);
-  geo.rotateX(Math.PI/2);          // align along +Z
-  geo.translate(0,0,-0.5);         // nose at front
+
+  // Orient along +Z (FORWARD)
+  geo.rotateX(-Math.PI/2);
+  geo.translate(0,0,0.5);
   geo.computeVertexNormals();
 
   const mat = new THREE.MeshStandardMaterial({
@@ -123,14 +126,10 @@ function buildShell(){
   return m;
 }
 
-/* ================= STATE ================= */
-let velZ = 0;
-let flying = false;
-let impacted = false;
-let penetrates = false;
-
-/* ================= DEFORMATION ================= */
-function deformShell(){
+/* ======================================================
+   DEFORMATION
+====================================================== */
+function deformShellExtreme(){
   const pos = shell.geometry.attributes.position;
 
   for(let i=0;i<pos.count;i++){
@@ -138,18 +137,17 @@ function deformShell(){
     const y = pos.getY(i);
     const z = pos.getZ(i);
 
-    // deform only nose region
-    if(z > -0.05){
+    if(z > 0.0){
       const r = Math.sqrt(x*x + y*y);
-      const fall = Math.max(0,1 - r/0.18);
+      const fall = Math.max(0,1-r/0.18);
 
-      pos.setZ(i, z - fall*0.28);
-      pos.setX(i, x*(1 + fall*1.6));
-      pos.setY(i, y*(1 + fall*1.6));
+      pos.setZ(i, z - fall*0.35);
+      pos.setX(i, x*(1 + fall*1.8));
+      pos.setY(i, y*(1 + fall*1.8));
     }
   }
 
-  // smoothing passes
+  // smooth
   for(let p=0;p<3;p++){
     for(let i=1;i<pos.count-1;i++){
       pos.setX(i,(pos.getX(i-1)+pos.getX(i)+pos.getX(i+1))/3);
@@ -161,7 +159,7 @@ function deformShell(){
   shell.geometry.computeVertexNormals();
 }
 
-function deformArmourTunnel(entryZ, exitZ){
+function deformArmourTunnel(zStart, zEnd){
   const pos = armourGeo.attributes.position;
 
   for(let i=0;i<pos.count;i++){
@@ -170,9 +168,7 @@ function deformArmourTunnel(entryZ, exitZ){
     const z = pos.getZ(i);
 
     const r = Math.sqrt(x*x + y*y);
-
-    // Only deform along shell axis (Z)
-    if(r < 0.6 && z > entryZ && z < exitZ){
+    if(r < 0.6 && z > zStart && z < zEnd){
       const fall = 1 - r/0.6;
       pos.setZ(i, z - fall*0.45);
     }
@@ -182,56 +178,82 @@ function deformArmourTunnel(entryZ, exitZ){
   armourGeo.computeVertexNormals();
 }
 
-/* ================= FIRE ================= */
+/* ======================================================
+   SIMULATION STATE
+====================================================== */
+let velZ = 0;
+let flying = false;
+let impacted = false;
+let penetrates = false;
+
+/* ======================================================
+   FIRE
+====================================================== */
 function fire(){
   if(shell) scene.remove(shell);
+
   shell = buildShell();
   scene.add(shell);
 
-  // start in front of armour
   shell.position.set(0,0,-4);
-
-  velZ = 0.09;
+  velZ = 0.1;
   flying = true;
   impacted = false;
 
-  // simple WT-like penetration threshold
   penetrates = Number(thickness.value) < 120;
 }
 
-/* ================= LOOP ================= */
+/* ======================================================
+   LOOP
+====================================================== */
 function animate(){
   requestAnimationFrame(animate);
 
   if(flying && shell){
     shell.position.z += velZ;
 
-    // impact at front face
-    const frontFaceZ = -armour.geometry.parameters.depth/2;
+    const frontZ = -armour.geometry.parameters.depth/2;
+    const backZ  =  armour.geometry.parameters.depth/2;
 
-    if(shell.position.z >= frontFaceZ && !impacted){
+    if(shell.position.z >= frontZ && !impacted){
       impacted = true;
-      deformShell();
+      deformShellExtreme();
 
       if(penetrates){
-        const backFaceZ = armour.geometry.parameters.depth/2;
-        deformArmourTunnel(frontFaceZ, backFaceZ);
+        deformArmourTunnel(frontZ, backZ);
       } else {
-        deformArmourTunnel(frontFaceZ, frontFaceZ + 0.6);
+        deformArmourTunnel(frontZ, frontZ+0.6);
         velZ = 0;
         flying = false;
       }
     }
 
-    // exit if penetrated
-    if(penetrates && shell.position.z > armour.geometry.parameters.depth/2 + 1){
+    if(penetrates && shell.position.z > backZ + 1){
       flying = false;
     }
   }
 
+  controls.update();
   renderer.render(scene,camera);
 }
 animate();
+
+/* ======================================================
+   UI
+====================================================== */
+const thickness = document.getElementById("thickness");
+const thv = document.getElementById("thv");
+
+thv.textContent = thickness.value;
+thickness.oninput = ()=>{
+  thv.textContent = thickness.value;
+  buildArmour(Number(thickness.value));
+};
+
+document.getElementById("fire").onclick = fire;
+document.getElementById("reset").onclick = resetArmour;
+
+buildArmour(Number(thickness.value));
 
 addEventListener("resize",()=>{
   camera.aspect = innerWidth/innerHeight;
